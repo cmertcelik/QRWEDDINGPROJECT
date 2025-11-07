@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Düğüne Hoşgeldiniz</title>
+<style>
+  body {margin:0; min-height:100vh; font-family:'Segoe UI',Arial,sans-serif;
+        display:flex; align-items:center; justify-content:center;}
+  .container {background:#fff; padding:48px 32px; border-radius:20px;
+              box-shadow:0 8px 32px rgba(60,72,88,0.12); text-align:center; min-width:320px;}
+  h1 {font-size:2.2rem; margin-bottom:32px; color:#3b3b3b; letter-spacing:1px;}
+  .upload-btn {display:inline-block; padding:14px 32px; font-size:1.1rem; border:none;
+               box-shadow:0 2px 8px rgba(99,102,241,0.08);}
+  .upload-btn:hover {background:linear-gradient(90deg,#4f46e5 0%,#2563eb 100%);}
+  input[type="file"] {display:none;}
+  #status {margin-top:20px; font-size:1rem; color:#555;}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Düğüne Hoşgeldiniz</h1>
+  <label class="upload-btn" for="fileInput">Fotoğraf veya Video Yükle</label>
+  <input id="fileInput" type="file" accept="image/*,video/*" multiple>
+  <div id="status"></div>
+</div>
+
+<script>
+const API_BASE = "https://yourdomain.com.:8443";
+const fileInput = document.getElementById('fileInput');
+const statusBox = document.getElementById('status');
+
+// Maksimum toplam boyut 5 GB
+const MAX_TOTAL_SIZE = 5 * 1024 * 1024 * 1024; // 5 GB
+let totalUploaded = 0;
+
+// Dosya seçildiğinde önce disk kontrolü yap
+fileInput.addEventListener('change', async (event) => {
+  const files = event.target.files;
+  if (!files.length) return;
+
+  // 1️⃣ Disk alanı kontrolü
+  let diskResp;
+  try {
+    diskResp = await fetch(API_BASE + '/disk', {method:'GET'});
+    const diskJson = await diskResp.json();
+    if (diskJson.status === "busy") {
+      statusBox.innerHTML = "<p>⚠️ Sunucu meşgul, lütfen daha sonra tekrar deneyin.</p>";
+      return;
+    }
+  } catch(err) {
+    statusBox.innerHTML = "<p>⚠️ Sunucuya ulaşılamıyor.</p>";
+    return;
+  }
+
+  for (let file of files) {
+    // Sadece fotoğraf veya video dosyası kontrolü
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      statusBox.innerHTML += `<p>❌ Sadece fotoğraf veya video yükleyebilirsiniz: ${file.name}</p>`;
+      continue;
+    }
+
+    if (totalUploaded + file.size > MAX_TOTAL_SIZE) {
+      statusBox.innerHTML += `<p>❌ Toplam yük boyutu 5GB sınırını aşıyor: ${file.name}</p>`;
+      continue;
+    }
+
+    // 2️⃣ Backend'den upload token al
+    let tokenResponse;
+    try {
+      tokenResponse = await fetch(API_BASE + '/token', {
+        method: 'POST'
+      });
+      if (!tokenResponse.ok) throw new Error('Token alınamadı');
+    } catch(err) {
+      statusBox.innerHTML += `<p>⚠️ Token alınamadı: ${file.name}</p>`;
+      continue;
+    }
+
+    const token = await tokenResponse.text();
+
+    // 3️⃣ Dosyayı backend'e gönder
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const uploadResp = await fetch(API_BASE + '/upload', {
+        method:'POST',
+        headers: {'Authorization': 'Bearer ' + token},
+        body: formData
+      });
+      if (uploadResp.ok) {
+        totalUploaded += file.size;
+        statusBox.innerHTML += `<p>✅ ${file.name} yüklendi.</p>`;
+      } else {
+        statusBox.innerHTML += `<p>❌ ${file.name} yüklenemedi (${uploadResp.status})</p>`;
+      }
+    } catch(err) {
+      statusBox.innerHTML += `<p>⚠️ ${file.name} yüklenirken hata: ${err.message}</p>`;
+    }
+  }
+});
+</script>
+</body>
+</html>
